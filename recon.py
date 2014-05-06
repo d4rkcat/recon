@@ -1,6 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import subprocess, socket, argparse
+from os import getuid
 
 parser = argparse.ArgumentParser(prog='recon', usage='./recon.py [options]')
 parser.add_argument('-u', "--url", type=str, help='nslookup, quick dns brute and whois info on url')
@@ -11,10 +12,13 @@ parser.add_argument('-t', "--searchsploit", action="store_true", help='use searc
 args = parser.parse_args()
 
 def fscan(ips):
+	if getuid() != 0:
+		print ' [!] No root, no play! Quitting...'
+		quit()
 	fcmdoutput('mkdir -p results')
 	for ip in ips:
 		print ' [0o] Starting service scan of ' + ip
-		cmd = 'nmap -sV -O ' + ip + ' -oX results/' + ip + '.xml'
+		cmd = 'nmap -sV -O %s -oX results/%s.xml' % (ip, ip)
 		if args.ports:
 			cmd += ' -p ' + args.ports
 		results = fcmdoutput(cmd).split('\n')
@@ -38,7 +42,7 @@ def fsearchsploit(terms):
 def flive(hosts):
 	print '\n [*] Starting ping scan of range ' + hosts
 	lhosts = []
-	live = fcmdoutput('nmap -PR -sn ' + hosts).split('\n')
+	live = fcmdoutput('nmap -PR -sn %s' % hosts).split('\n')
 	for host in live:
 		if 'report' in host:
 			lhosts.append(host.partition('(')[2].strip(')'))
@@ -48,16 +52,16 @@ def flive(hosts):
 
 def fgetns(host):
 	nsserv = []
-	results = fcmdoutput('dig ns ' + host).split('\n')
+	results = fcmdoutput('dig ns %s' % host).split('\n')
 	for line in results:
 		if 'NS' in line and ';' not in line:
 			nsserv.append(line.partition('NS')[2][:-1].strip('\t'))
 	return nsserv
 
 def fzonetransfer(ns, host):
-	results = fcmdoutput('dig @' + ns + ' ' + host + ' axfr').split('\n')
+	results = fcmdoutput('dig @%s %s axfr' % (ns, host)).split('\n')
 	for line in results:
-		if 'Transfer failed' in line or '; communications error' in line:
+		if 'Transfer failed' in line or 'communications error' in line or 'connection refused' in line:
 			return ' [x] Zone transfer failed\n'
 	return ' [!] Zone tansfer success!\n' + '\n'.join(results)
 
