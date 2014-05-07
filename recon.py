@@ -2,7 +2,7 @@
 
 import socket, argparse
 from subprocess import Popen, PIPE
-from os import getuid
+from os import getuid, mkdir, path
 
 parser = argparse.ArgumentParser(prog='recon', usage='./recon.py [options]')
 parser.add_argument('-u', "--url", type=str, 
@@ -17,25 +17,24 @@ parser.add_argument('-t', "--searchsploit", action="store_true",
 	help='use searchsploit')
 args = parser.parse_args()
 
-def fscan(ips):
-	if getuid() != 0:
-		print ' [!] No root, no play! Quitting...'
-		quit()
-	for ip in ips:
-		print ' [0o] Starting service scan of ' + ip
-		cmd = 'nmap -sV -O %s -oX results/%s.xml' % (ip, ip)
-		if args.ports:
-			cmd += ' -p ' + args.ports
-		results = fcmdoutput(cmd).split('\n')
-		for line in results:
-			if 'report for' in line:
-				print ' [H] Hostname: ' + line.split('for')[1].split(' ')[1]
-			if 'OS details' in line:
-				print ' [O] ' + line
-			if 'open' in line or 'filtered' in line:
-				if not 'Not shown:' in line and not 'closed' in line:
-					print ' [S] ' + line
-		print '\n [*] Scan results exported to results/' + ip + '.xml\n'
+def fscan(ip):
+	final = ''
+	print ' [0o] Starting service scan of ' + ip
+	cmd = 'nmap -sV -O %s -oX results/%s.xml' % (ip, ip)
+	if args.ports:
+		cmd += ' -p ' + args.ports
+	results = fcmdoutput(cmd).split('\n')
+	for line in results:
+		if 'report for' in line:
+			final += ' [H] Hostname: ' + line.split('for')[1].split(' ')[1]\
+			 + '\n'
+		if 'OS details' in line:
+			final += ' [O] ' + line + '\n'
+		if 'open' in line or 'filtered' in line:
+			if not 'Not shown:' in line and not 'closed' in line:
+				final += ' [S] ' + line + '\n'
+	final += '\n [*] Scan results exported to results/' + ip + '.xml\n'
+	return final
 
 def fcmdoutput(cmd):
 	return Popen(cmd.split(' '), stdout=PIPE).communicate()[0]
@@ -105,7 +104,12 @@ def fdnsresolve(host):
 		pass
 	return dnsout
 
-fcmdoutput('mkdir -p results')
+if getuid() != 0:
+		print ' [!] No root, no play! Quitting...'
+		quit()
+
+if not path.exists('results'):
+	mkdir('results')
 
 if not any(vars(args).values()):
 	parser.print_help() 
@@ -136,11 +140,12 @@ if args.url:
 	print '\n [*] Scan results exported to results/' + cleanurl + '.txt\n'
 
 if args.servicescan:
-	ss = args.service
-	if '/' in ss or '-' in ss or ',' in ss:
-		fscan(flive(ss))
+	ip = args.servicescan
+	if '/' in ip or '-' in ip or ',' in ip:
+		for ip in flive(ip):
+			print fscan(ip)
 	else:
-		fscan(ss.split('\n'))
+		print fscan(ip)
 
 if args.searchsploit:
 	fsearchsploit(raw_input(" [>] Enter the terms to search seperated by ','\n"\
