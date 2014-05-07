@@ -1,21 +1,26 @@
 #!/usr/bin/env python
 
-import subprocess, socket, argparse
+import socket, argparse
+from subprocess import Popen, PIPE
 from os import getuid
 
 parser = argparse.ArgumentParser(prog='recon', usage='./recon.py [options]')
-parser.add_argument('-u', "--url", type=str, help='nslookup, quick dns brute and whois info on url')
-parser.add_argument('-s', "--servicescan", type=str, help='scan ip/range for services')
-parser.add_argument('-l', "--livehosts", type=str, help='pingscan ip/range for live hosts')
-parser.add_argument('-p', "--ports", type=str, help='port range for service scan')
-parser.add_argument('-t', "--searchsploit", action="store_true", help='use searchsploit')
+parser.add_argument('-u', "--url", type=str, 
+	help='nslookup, quick dns brute and whois info on url')
+parser.add_argument('-s', "--servicescan", type=str, 
+	help='scan ip/range for services')
+parser.add_argument('-l', "--livehosts", type=str, 
+	help='pingscan ip/range for live hosts')
+parser.add_argument('-p', "--ports", type=str, 
+	help='port range for service scan')
+parser.add_argument('-t', "--searchsploit", action="store_true", 
+	help='use searchsploit')
 args = parser.parse_args()
 
 def fscan(ips):
 	if getuid() != 0:
 		print ' [!] No root, no play! Quitting...'
 		quit()
-	fcmdoutput('mkdir -p results')
 	for ip in ips:
 		print ' [0o] Starting service scan of ' + ip
 		cmd = 'nmap -sV -O %s -oX results/%s.xml' % (ip, ip)
@@ -24,7 +29,7 @@ def fscan(ips):
 		results = fcmdoutput(cmd).split('\n')
 		for line in results:
 			if 'report for' in line:
-				print ' [H] Hostname: ' + line.partition('for')[2].strip().split(' ')[0]
+				print ' [H] Hostname: ' + line.split('for')[1].split(' ')[1]
 			if 'OS details' in line:
 				print ' [O] ' + line
 			if 'open' in line or 'filtered' in line:
@@ -33,7 +38,7 @@ def fscan(ips):
 		print '\n [*] Scan results exported to results/' + ip + '.xml\n'
 
 def fcmdoutput(cmd):
-	return subprocess.Popen(cmd.split(' '), stdout=subprocess.PIPE).communicate()[0]
+	return Popen(cmd.split(' '), stdout=PIPE).communicate()[0]
 
 def fsearchsploit(terms):
 	for term in terms:
@@ -43,25 +48,30 @@ def flive(hosts):
 	print '\n [*] Starting ping scan of range ' + hosts
 	lhosts = []
 	live = fcmdoutput('nmap -PR -sn %s' % hosts).split('\n')
-	for host in live:
-		if 'report' in host:
-			lhosts.append(host.partition('(')[2].strip(')'))
-			print ' [>] Found alive host at ' + host.partition('(')[2].strip(')')
+	for line in live:
+		if 'report' in line:
+			lhosts.append(line.split('(')[1][:-1])
+			print ' [>] Found alive host at' + line.split('for')[1]
 	print
 	return lhosts
 
 def fgetns(host):
 	nsserv = []
+	nsout = ' [0o] Starting enumeration of ' + cleanurl + '\n [*] Nameservers:\n'
 	results = fcmdoutput('dig ns %s' % host).split('\n')
 	for line in results:
-		if 'NS' in line and ';' not in line:
-			nsserv.append(line.partition('NS')[2][:-1].strip('\t'))
-	return nsserv
+		if 'NS' in line and ';' not in line: 
+			nsserv.append(line.split('\t')[5][:-1])
+	for ns in nsserv:
+		nsout += ' [*] ' + ns + ' --> ' + socket.gethostbyname(ns) + '\n'\
+		+ fzonetransfer(ns, cleanurl)
+	return nsout
+
 
 def fzonetransfer(ns, host):
 	results = fcmdoutput('dig @%s %s axfr' % (ns, host)).split('\n')
 	for line in results:
-		if 'Transfer failed' in line or 'communications error' in line or 'connection refused' in line:
+		if 'failed' in line or 'communications' in line or 'refused' in line:
 			return ' [x] Zone transfer failed\n'
 	return ' [!] Zone tansfer success!\n' + '\n'.join(results)
 
@@ -79,46 +89,59 @@ def fwhois(ip):
 	whoisresults = []
 	whoislist = fcmdoutput('whois ' + ip).split('\n')
 	for line in whoislist:
-		if "desc" in line.lower() or "country" in line.lower() or "orgname" in line.lower() or "netname" in line.lower():
+		whoisdata = ("desc" in line.lower() or "country" in line.lower() 
+			or "orgname" in line.lower() or "netname" in line.lower())
+		if whoisdata:
 			whoisresults.append(line.strip('\n'))
 	return ip + '\n' + '\n'.join(whoisresults)
 
-def fdnsbrute(host):
-	subs = [ 'www', 'ftp', 'cpanel', 'mail', 'direct', 'direct-connect', 'webmail', 'portal', 'forum', 'forums', 'admin' ]
-	for sub in subs:
-		look = sub + '.' + host
-		try:
-			for ip in fnslookup(look):
-				if ip != ignoreip:
-					print '\n [*] ' + look + ' --> ' + fwhois(ip)
-		except:
-			pass
-	print
+def fdnsresolve(host):
+	dnsout = ''
+	try:
+		for ip in fnslookup(host):
+			if ip != ignoreip:
+				dnsout += '\n [*] ' + host + ' --> ' + fwhois(ip)
+	except:
+		pass
+	return dnsout
+
+fcmdoutput('mkdir -p results')
 
 if not any(vars(args).values()):
-	parser.print_help()
+	parser.print_help() 
 	exit()
 
 if args.livehosts:
 	flive(args.livehosts)
 
 if args.url:
-	try:
-		ignoreip = socket.gethostbyname('notareal.website')	# Check if the ISP hijacks DNS requests, so we can ignore them.
+	subs = [ 'www', 'ftp', 'cpanel', 'mail', 'direct', 'direct-connect',
+	'media', 'store' 'webmail', 'portal', 'forum', 'forums', 'admin' ]
+	finalresult = ''
+	try: # Check if the ISP hijacks DNS requests, so we can ignore them.
+		ignoreip = socket.gethostbyname('notareal.website')
 	except:
 		ignoreip = ''
 	cleanurl = '.'.join(args.url.split('.')[-2:])
-	print ' [0o] Starting enumeration of ' + cleanurl + '\n' + ' [*] Nameservers:\n'
-	for ns in fgetns(cleanurl):
-		print ' [*] ' + ns + ' --> ' + socket.gethostbyname(ns) + '\n' + fzonetransfer(ns, cleanurl)
-	fdnsbrute(cleanurl)
+	getnsdata = fgetns(cleanurl)
+	print getnsdata
+	finalresult += getnsdata
+	for sub in subs:
+		result = fdnsresolve(sub + '.' + args.url)
+		if result:
+			print result
+			finalresult += result
+	with open('results/%s.txt' % (cleanurl), 'w') as output:
+		output.write(finalresult + '\n')
+	print '\n [*] Scan results exported to results/' + cleanurl + '.txt\n'
 
 if args.servicescan:
-	if '/' in args.servicescan or '-' in args.servicescan or ',' in args.servicescan:
-		fscan(flive(args.servicescan))
+	ss = args.service
+	if '/' in ss or '-' in ss or ',' in ss:
+		fscan(flive(ss))
 	else:
-		fscan(args.servicescan.split('\n'))
+		fscan(ss.split('\n'))
 
 if args.searchsploit:
-	fsearchsploit(raw_input(" [>] Enter the terms to search seperated by ',' eg: samba windows,proftpd 1.3.2 linux,unreal" \
-	" ircd,apache\n > ").split(','))
+	fsearchsploit(raw_input(" [>] Enter the terms to search seperated by ','\n"\
+	"eg: samba windows,proftpd 1.3.2 linux,unreal ircd,apache\n > ").split(','))
