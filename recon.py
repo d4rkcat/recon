@@ -47,10 +47,11 @@ def flive(hosts):
 	print '\n [*] Starting ping scan of range ' + hosts
 	lhosts = []
 	live = fcmdoutput('nmap -PR -sn %s' % hosts).split('\n')
+	print ' [*] Live Hosts:'
 	for line in live:
 		if 'report' in line:
 			lhosts.append(line.split('(')[1][:-1])
-			print ' [>] Found alive host at' + line.split('for')[1]
+			print ' [>]' + line.split('for')[1]
 	print
 	return lhosts
 
@@ -119,15 +120,20 @@ if args.livehosts:
 	flive(args.livehosts)
 
 if args.url:
-	subs = [ 'www', 'ftp', 'cpanel', 'mail', 'direct', 'direct-connect',
-	'media', 'store' 'webmail', 'portal', 'forum', 'forums', 'admin' ]
+	subs = [ 'www', 'www2', 'ftp', 'cpanel', 'mail', 'direct', 'direct-connect',
+	'media', 'store' 'webmail', 'portal', 'forum', 'forums', 'admin', 'vpn',
+	'proxy', 'firewall', 'mx', 'pop3', 'router', 'owa', 'proxy', 'intranet' ]
 	finalresult = ''
 	try: # Check if the ISP hijacks DNS requests, so we can ignore them.
 		ignoreip = socket.gethostbyname('notareal.website')
 	except:
 		ignoreip = ''
 	cleanurl = '.'.join(args.url.split('.')[-2:])
-	getnsdata = fgetns(cleanurl)
+	try:
+		getnsdata = fgetns(cleanurl)
+	except:
+		print ' [*] Domain does not exist!'
+		exit()
 	print getnsdata
 	finalresult += getnsdata
 	for sub in subs:
@@ -148,5 +154,5 @@ if args.servicescan:
 		print fscan(ip)
 
 if args.searchsploit:
-	fsearchsploit(raw_input(" [>] Enter the terms to search seperated by ','\n"\
+	fsearchsploit(raw_input(" [>] Enter the terms to search separated by ','\n"\
 	"eg: samba windows,proftpd 1.3.2 linux,unreal ircd,apache\n > ").split(','))
