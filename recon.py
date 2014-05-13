@@ -50,7 +50,7 @@ def flive(hosts):
 	print ' [*] Live Hosts:'
 	for line in live:
 		if 'report' in line:
-			lhosts.append(line.split('(')[1][:-1])
+			lhosts.append(line.split('for')[1])
 			print ' [>]' + line.split('for')[1]
 	print
 	return lhosts
